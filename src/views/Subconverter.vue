@@ -292,7 +292,7 @@ export default {
     this.isPC = this.$getOS().isPc;
 
     // 获取 url cache
-    if (process.env.VUE_APP_USE_STORAGE === 'true') {
+    if (import.meta.env.VITE_USE_STORAGE === 'true') {
       const cachedUrl = getLocalStorageItem('sourceSubUrl');
       if (cachedUrl) {
         this.form.sourceSubUrl = cachedUrl;
@@ -301,8 +301,12 @@ export default {
   },
   mounted() {
     this.form.clientType = CONSTANTS.DEFAULT_CLIENT_TYPE;
-    this.notify();
     this.getBackendVersion();
+    
+    // 延迟加载隐私提示，避免阻塞页面初始化
+    setTimeout(() => {
+      this.notify();
+    }, 1000);
   },
   methods: {
     onCopy() {

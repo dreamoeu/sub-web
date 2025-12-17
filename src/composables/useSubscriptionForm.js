@@ -70,7 +70,7 @@ export function addCustomParam(customParams) {
  */
 export function saveSubUrl(form) {
   if (form && form.sourceSubUrl !== '') {
-    const ttl = process.env.VUE_APP_CACHE_TTL || 3600;
+    const ttl = Number(import.meta.env.VITE_CACHE_TTL) || 3600;
     setLocalStorageItem('sourceSubUrl', form.sourceSubUrl, ttl);
   }
 }

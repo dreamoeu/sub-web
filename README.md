@@ -44,10 +44,10 @@ cd sub-web
 yarn install
 
 # 启动开发服务器
-yarn serve
+yarn dev
 ```
 
-访问 <http://localhost:8080/> 查看应用。
+访问 <http://localhost:5173/> 查看应用。
 
 ## 📦 环境要求
 
@@ -86,12 +86,29 @@ yarn install
 
 ```env
 # Subconverter 后端地址
-VUE_APP_SUBCONVERTER_DEFAULT_BACKEND=https://api.wcc.best
+VITE_SUBCONVERTER_DEFAULT_BACKEND=https://api.wcc.best
 
-# 其他配置
-VUE_APP_PROJECT=https://github.com/CareyWang/sub-web
-VUE_APP_BOT_LINK=https://t.me/subconverter_discuss
+# 项目与社区链接
+VITE_PROJECT=https://github.com/CareyWang/sub-web
+VITE_BOT_LINK=https://t.me/subconverter_discuss
+
+# 可选：远程配置与说明文档
+VITE_SUBCONVERTER_REMOTE_CONFIG=
+VITE_SUBCONVERTER_DOC_ADVANCED=
+
+# 可选：后端版本标识
+VITE_BACKEND_RELEASE=
+
+# 可选：短链接与配置上传服务
+VITE_MYURLS_API=
+VITE_CONFIG_UPLOAD_API=
+
+# 可选：开启本地存储与缓存 TTL（秒）
+VITE_USE_STORAGE=true
+VITE_CACHE_TTL=86400
 ```
+
+如果部署在子路径（如 `/sub-web/`），通过 `BASE_URL` 指定路由基础路径。
 
 ## 🚀 使用
 
@@ -99,10 +116,10 @@ VUE_APP_BOT_LINK=https://t.me/subconverter_discuss
 
 ```bash
 # 启动开发服务器
-yarn serve
+yarn dev
 ```
 
-访问 <http://localhost:8080/> 查看应用。
+访问 <http://localhost:5173/> 查看应用。
 
 ### 生产构建
 

@@ -1,10 +1,10 @@
 import Vue from 'vue'
 import App from './App.vue'
 import router from './router'
-require(`@/plugins/element-ui`)
-require(`@/plugins/clipboard`)
-require(`@/plugins/axios`)
-require(`@/plugins/device`)
+import '@/plugins/element-ui'
+import '@/plugins/clipboard'
+import '@/plugins/axios'
+import '@/plugins/device'
 
 import '@/icons' // icon
 
