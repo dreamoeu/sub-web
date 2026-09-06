@@ -33,5 +33,5 @@ export const formatVersion = (version) => {
  * @returns {string} 处理后的订阅链接
  */
 export const processSubUrl = (url) => {
-  return url.replace(/(\n|\r|\n\r)/g, "|");
+  return url.replace(/\r\n|\r|\n/g, "|");
 };

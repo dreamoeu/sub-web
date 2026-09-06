@@ -2,6 +2,8 @@
   <el-dialog
     v-model="localVisible"
     :show-close="false"
+    :close-on-click-modal="!loading"
+    :close-on-press-escape="!loading"
     width="700px"
   >
     <template #header>
@@ -10,14 +12,14 @@
 
     <el-form label-position="left" :inline="true">
       <el-form-item prop="loadConfig" label="订阅链接：" label-width="85px">
-        <el-input v-model="localLoadConfig" style="width: 565px" />
+        <el-input v-model="localLoadConfig" :disabled="loading" style="width: 565px" />
       </el-form-item>
     </el-form>
 
     <template #footer>
       <div class="dialog-footer">
-        <el-button @click="handleCancel">取 消</el-button>
-        <el-button type="primary" @click="handleConfirm" :disabled="localLoadConfig.length === 0">
+        <el-button @click="handleCancel" :disabled="loading">取 消</el-button>
+        <el-button type="primary" @click="handleConfirm" :loading="loading" :disabled="loading || localLoadConfig.trim().length === 0">
           确 定
         </el-button>
       </div>
@@ -65,10 +67,12 @@ export default {
   },
   methods: {
     handleCancel() {
-      this.$emit('cancel');
+      if (this.loading) return
+      this.$emit('cancel')
     },
     handleConfirm() {
-      this.$emit('confirm', this.localLoadConfig);
+      if (this.loading) return
+      this.$emit('confirm', this.localLoadConfig)
     }
   }
 };

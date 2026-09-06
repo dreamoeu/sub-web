@@ -28,29 +28,22 @@ export class ShortUrlService {
     }
   }
 
-  /**
-   * 处理短链接成功响应
-   * @param {Object} res - 响应对象
-   * @param {Function} $copyText - 复制文本函数
-   * @param {Function} $message - 消息提示函数
-   * @returns {string} 短链接
-   */
-  static handleShortUrlSuccess(res, $copyText, $message) {
-    if (res.data.Code === 1 && res.data.ShortUrl !== "") {
-      const shortUrl = res.data.ShortUrl;
-      $copyText(shortUrl);
-      $message.success("短链接已复制到剪贴板");
-      return shortUrl;
-    } else {
-      throw new Error(res.data.Message);
+  /** 只展开没有 target 查询参数的链接，网络请求留在此模块。 */
+  static async resolveUrl(input, fetchUrl = fetch) {
+    let url
+    try {
+      url = new URL(input)
+    } catch {
+      return input
     }
-  }
-
-  /**
-   * 处理短链接错误
-   * @param {Function} $message - 消息提示函数
-   */
-  static handleShortUrlError($message) {
-    $message.error("短链接获取失败");
+    if (!['http:', 'https:'].includes(url.protocol) || url.searchParams.has('target')) {
+      return input
+    }
+    try {
+      const response = await fetchUrl(url.href, { method: 'GET', redirect: 'follow' })
+      return response.url
+    } catch (cause) {
+      throw new Error('解析短链接失败，请检查短链接服务端是否配置跨域', { cause })
+    }
   }
 }

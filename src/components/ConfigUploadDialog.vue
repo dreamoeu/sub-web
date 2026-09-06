@@ -2,6 +2,8 @@
   <el-dialog
     v-model="localVisible"
     :show-close="false"
+    :close-on-click-modal="!loading"
+    :close-on-press-escape="!loading"
     width="700px"
   >
     <template #header>
@@ -21,6 +23,7 @@
       <el-form-item v-else prop="uploadConfig">
         <el-input
           v-model="localUploadConfig"
+          :disabled="loading"
           type="textarea"
           :autosize="{ minRows: 15, maxRows: 30 }"
           maxlength="10000"
@@ -31,12 +34,13 @@
 
     <template #footer>
       <div class="dialog-footer">
-        <el-button @click="handleCancel">{{ resultUrl ? '关 闭' : '取 消' }}</el-button>
+        <el-button @click="handleCancel" :disabled="loading">{{ resultUrl ? '关 闭' : '取 消' }}</el-button>
         <el-button
           v-if="!resultUrl"
           type="primary"
           @click="handleConfirm"
-          :disabled="localUploadConfig.length === 0"
+          :loading="loading"
+          :disabled="loading || localUploadConfig.trim().length === 0"
         >
           确 定
         </el-button>
@@ -102,10 +106,12 @@ export default {
   },
   methods: {
     handleCancel() {
-      this.$emit('cancel');
+      if (this.loading) return
+      this.$emit('cancel')
     },
     handleConfirm() {
-      this.$emit('confirm', this.localUploadConfig);
+      if (this.loading) return
+      this.$emit('confirm', this.localUploadConfig)
     }
   }
 };

@@ -83,7 +83,7 @@
                         <el-checkbox v-model="form.scv">跳过证书验证</el-checkbox>
                       </el-row>
                       <el-row>
-                        <el-checkbox v-model="form.udp" @change="needUdp = true">启用 UDP</el-checkbox>
+                        <el-checkbox :model-value="form.udp === true" @change="form.udp = $event">启用 UDP</el-checkbox>
                       </el-row>
                       <el-row>
                         <el-checkbox v-model="form.appendType">节点类型</el-checkbox>
@@ -131,14 +131,14 @@
               </el-divider>
 
               <el-form-item label="定制订阅:">
-                <el-input class="copy-content" disabled v-model="customSubUrl">
+                <el-input class="copy-content" disabled :model-value="customSubUrl">
                   <template #append>
                     <el-button :icon="DocumentCopy" @click="copyToClipboard(customSubUrl)">复制</el-button>
                   </template>
                 </el-input>
               </el-form-item>
               <el-form-item label="订阅短链:">
-                <el-input class="copy-content" disabled v-model="curtomShortSubUrl">
+                <el-input class="copy-content" disabled :model-value="curtomShortSubUrl">
                   <template #append>
                     <el-button :icon="DocumentCopy" @click="copyToClipboard(curtomShortSubUrl)">复制</el-button>
                   </template>
@@ -204,7 +204,7 @@
       v-model:visible="dialogUploadConfigVisible"
       :upload-config="uploadConfig"
       :result-url="uploadResultUrl"
-      :loading="loading"
+      :loading="uploading"
       @cancel="handleUploadCancel"
       @confirm="handleConfigUpload"
     />
@@ -213,7 +213,7 @@
     <UrlParseDialog
       v-model:visible="dialogLoadConfigVisible"
       :load-config="loadConfig"
-      :loading="loading"
+      :loading="parsing"
       @cancel="handleLoadCancel"
       @confirm="handleUrlParse"
     />
@@ -242,11 +242,12 @@ import { REMOTE_CONFIGS } from '@/config/remote-configs';
 // 导入Composables
 import { useSubscriptionForm, addCustomParam, saveSubUrl as saveSubscriptionUrl } from '@/composables/useSubscriptionForm';
 import { useSubscription } from '@/composables/useSubscription';
-import { useUrlParser } from '@/composables/useUrlParser';
+import { useGeneratedLinks } from '@/composables/useGeneratedLinks'
 
 // 导入工具函数
 import { getLocalStorageItem } from '@/utils/storage';
 import { copyText } from '@/utils/clipboard';
+import { formatErrorMessage } from '@/utils/formatters'
 
 // 导入服务
 import { BackendService } from '@/services/backendService';
@@ -278,8 +279,9 @@ export default {
 
       // 状态
       backendVersion: "",
-      loading: false,
-      curtomShortSubUrl: "",
+      generatedLinks: useGeneratedLinks(),
+      uploading: false,
+      parsing: false,
       dialogUploadConfigVisible: false,
       loadConfig: "",
       dialogLoadConfigVisible: false,
@@ -341,12 +343,16 @@ export default {
       return this.customSubUrl.length > 0;
     },
 
-    processedSubUrl() {
-      return this.form.sourceSubUrl.replace(/(\n|\r|\n\r)/g, "|");
+    customSubUrl() {
+      return this.generatedLinks.longUrl
     },
 
-    currentBackend() {
-      return this.form.customBackend || CONSTANTS.DEFAULT_BACKEND;
+    curtomShortSubUrl() {
+      return this.generatedLinks.shortUrl
+    },
+
+    loading() {
+      return this.uploading || this.parsing || this.generatedLinks.pending
     }
   },
   watch: {
@@ -406,124 +412,111 @@ export default {
 
     clashInstall() {
       if (this.customSubUrl === "") {
-        this.$message.error("请先填写必填项，生成订阅链接");
-        return false;
+        this.$message.error("请先填写必填项，生成订阅链接")
+        return false
       }
 
-      const url = "clash://install-config?url=";
-      window.open(
-        url +
-        encodeURIComponent(
-          this.curtomShortSubUrl !== ""
-            ? this.curtomShortSubUrl
-            : this.customSubUrl
-        )
-      );
+      window.open('clash://install-config?url=' + encodeURIComponent(this.generatedLinks.importUrl))
     },
 
     makeUrlClick() {
-      const url = this.makeUrl(this.form, this.advanced, this.processedSubUrl, this.currentBackend, this.customParams, this.needUdp);
+      const url = this.makeUrl(this.form, this.advanced, this.customParams)
       if (url) {
-        this.customSubUrl = url;
-        this.copyToClipboard(this.customSubUrl, "定制订阅已复制到剪贴板");
+        this.generatedLinks.setLongUrl(url)
+        this.copyToClipboard(this.customSubUrl, "定制订阅已复制到剪贴板")
       } else {
-        this.$message.error("订阅链接与客户端为必填项");
+        this.$message.error("订阅链接与客户端为必填项")
       }
     },
 
-    makeShortUrlClick() {
-      if (this.customSubUrl === "") {
-        this.$message.warning("请先生成订阅链接，再获取对应短链接");
-        return false;
+    async makeShortUrlClick() {
+      if (this.customSubUrl === '') {
+        this.$message.warning('请先生成订阅链接，再获取对应短链接')
+        return false
       }
-
-      this.loading = true;
-
-      ShortUrlService.generateShortUrl(this.$axios, this.customSubUrl)
-        .then(shortUrl => {
-          this.curtomShortSubUrl = shortUrl;
-          this.copyToClipboard(shortUrl, "短链接已复制到剪贴板");
-        })
-        .catch(error => {
-          this.$message.error("短链接获取失败：" + error.message);
-        })
-        .finally(() => {
-          this.loading = false;
-        });
+      try {
+        const shortUrl = await this.generatedLinks.shorten(
+          url => ShortUrlService.generateShortUrl(this.$axios, url)
+        )
+        if (shortUrl) await this.copyToClipboard(shortUrl, '短链接已复制到剪贴板')
+      } catch (error) {
+        this.$message.error('短链接获取失败：' + formatErrorMessage(error))
+      }
     },
 
-    confirmUploadConfig() {
-      if (this.uploadConfig === "") {
-        this.$message.warning("远程配置不能为空");
-        return false;
+    async confirmUploadConfig() {
+      if (this.uploading) return
+      if (this.uploadConfig.trim() === '') {
+        this.$message.warning('远程配置不能为空')
+        return false
       }
-
-      this.loading = true;
-
-      ConfigUploadService.uploadConfig(this.$axios, this.uploadConfig)
-        .then(async res => {
-          const result = await ConfigUploadService.handleUploadSuccess(res, copyText, this.$message);
-          if (result.success) {
-            // 自动填充至『表单-远程配置』
-            this.form.remoteConfig = result.url;
-            if (result.copied) {
-              this.dialogUploadConfigVisible = false;
-              this.uploadConfig = "";
-              this.uploadResultUrl = "";
-            } else {
-              this.uploadResultUrl = result.url;
-            }
-          }
-        })
-        .catch(error => {
-          this.$message.error("远程配置上传失败: " + error.message);
-        })
-        .finally(() => {
-          this.loading = false;
-        });
+      this.uploading = true
+      try {
+        const result = await ConfigUploadService.uploadConfig(this.$axios, this.uploadConfig, copyText)
+        this.form.remoteConfig = result.url
+        if (result.copied) {
+          this.$message.success('远程配置上传成功，配置链接已复制到剪贴板，有效期三个月望知悉')
+          this.dialogUploadConfigVisible = false
+          this.uploadConfig = ''
+          this.uploadResultUrl = ''
+        } else {
+          this.$message.error('复制失败，请手动选中链接复制')
+          this.uploadResultUrl = result.url
+        }
+      } catch (error) {
+        this.$message.error('远程配置上传失败: ' + formatErrorMessage(error))
+      } finally {
+        this.uploading = false
+      }
     },
 
     handleUploadCancel() {
-      this.uploadConfig = "";
-      this.uploadResultUrl = "";
-      this.dialogUploadConfigVisible = false;
+      if (this.uploading) return
+      this.uploadConfig = ""
+      this.uploadResultUrl = ""
+      this.dialogUploadConfigVisible = false
     },
 
     handleConfigUpload(configContent) {
-      this.uploadConfig = configContent;
-      this.confirmUploadConfig();
+      if (this.uploading) return
+      this.uploadConfig = configContent
+      return this.confirmUploadConfig()
     },
 
     handleLoadCancel() {
-      this.loadConfig = "";
-      this.dialogLoadConfigVisible = false;
+      if (this.parsing) return
+      this.loadConfig = ""
+      this.dialogLoadConfigVisible = false
     },
 
     handleUrlParse(url) {
-      this.loadConfig = url;
-      this.confirmLoadConfig();
+      if (this.parsing) return
+      this.loadConfig = url
+      return this.confirmLoadConfig()
     },
 
-    confirmLoadConfig() {
-      this.loading = true;
-
-      this.parseUrl(
-        this.loadConfig,
-        this.form,
-        this.customParams,
-        () => {
-          this.dialogLoadConfigVisible = false;
-          this.loadConfig = "";
-          this.$message.success("长/短链接已成功解析为订阅信息");
-        },
-        (error) => {
-          this.$message.error(error);
+    async confirmLoadConfig() {
+      if (this.parsing) return
+      this.parsing = true
+      try {
+        const url = await ShortUrlService.resolveUrl(this.loadConfig)
+        const result = this.parseUrl(url)
+        if (!result.success) {
+          this.$message.error(result.message)
+          return false
         }
-      ).then(() => {
-        this.loading = false;
-      }).catch(() => {
-        this.loading = false;
-      });
+        this.form = result.form
+        this.customParams = result.customParams
+        this.dialogLoadConfigVisible = false
+        this.loadConfig = ''
+        this.$message.success('长/短链接已成功解析为订阅信息')
+        return true
+      } catch (error) {
+        this.$message.error(formatErrorMessage(error))
+        return false
+      } finally {
+        this.parsing = false
+      }
     },
 
     backendSearch(queryString, cb) {
@@ -566,8 +559,7 @@ export default {
     },
 
     // 使用 composables
-    ...useSubscription(),
-    ...useUrlParser()
+    ...useSubscription(CONSTANTS.DEFAULT_BACKEND)
   }
 };
 </script>

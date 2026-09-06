@@ -9,7 +9,7 @@ Vue 3 + Vite 8 SPA with Element Plus. Keep changes small, follow existing patter
 - UI: Element Plus 2 (icons via `@element-plus/icons-vue`)
 - Router: Vue Router 4 (`createWebHistory`, base from `import.meta.env.BASE_URL`)
 - Node: 24.x
-- No automated tests currently
+- Regression tests use Node’s built-in test runner with the existing Vite loader; no additional test dependency
 
 ## Commands
 
@@ -20,10 +20,11 @@ Vue 3 + Vite 8 SPA with Element Plus. Keep changes small, follow existing patter
 | `yarn build` | Production build |
 | `yarn preview` | Preview production build locally |
 | `yarn lint` | ESLint check |
+| `node --test tests/subscription-workflows.test.mjs` | Subscription workflow regression tests |
 
 ## CI / Workflows
 
-- **build.yml**: triggers on push/PR to `master` and `dev` — runs `yarn install --frozen-lockfile` + `yarn lint` + `yarn build`, then uploads `dist/` as artifact (7-day retention)
+- **build.yml**: triggers on push/PR to `master` and `dev` — runs `yarn install --frozen-lockfile` + `yarn lint` + Node regression tests + `yarn build`, then uploads `dist/` as artifact (7-day retention)
 - **docker-build-push.yml**: triggers on push to `master` — builds and pushes multi-arch image (`linux/amd64`, `linux/arm64`) to `careywong/subweb:latest`
 
 ## Repository Layout
@@ -39,13 +40,13 @@ src/
 │   ├── UrlParseDialog.vue       # URL parse dialog
 │   └── SvgIcon/index.vue        # SVG icon wrapper component
 ├── composables/
-│   ├── useSubscription.js       # URL building logic (makeUrl, buildBaseUrl, buildAdvancedParams)
+│   ├── useSubscription.js       # Form defaults + URL generation and parsing rules
 │   ├── useSubscriptionForm.js   # Reactive form state + addCustomParam + saveSubUrl
-│   └── useUrlParser.js          # Short-link expansion + URL-to-form parser (analyzeUrl, parseUrl)
+│   └── useGeneratedLinks.js     # Generated long/short link association + pending requests
 ├── services/
 │   ├── backendService.js        # BackendService.getBackendVersion()
-│   ├── shortUrlService.js       # ShortUrlService.generateShortUrl()
-│   └── configUploadService.js   # ConfigUploadService.uploadConfig(), handleUploadSuccess()
+│   ├── shortUrlService.js       # ShortUrlService.generateShortUrl(), resolveUrl()
+│   └── configUploadService.js   # Upload + copy attempt, returns { url, copied }
 ├── config/
 │   ├── constants.js             # CONSTANTS (env-backed, DEFAULT_CLIENT_TYPE='clash')
 │   ├── client-types.js          # CLIENT_TYPES map (display label → target value)
@@ -72,17 +73,16 @@ All values read from `import.meta.env` with `VITE_` prefix. Key constants:
 - `SHORT_URL_API`, `CONFIG_UPLOAD_API`, `PROJECT`, `BOT_LINK`, etc.
 
 ### `src/composables/useSubscriptionForm.js`
-Returns plain object merged into `data()` via spread. Form fields include: `sourceSubUrl`, `clientType`, `customBackend`, `remoteConfig`, `emoji`, `nodeList`, `sort`, `udp`, `tfo`, `scv`, `fdn`, `expand`, `appendType`, `insert`, `new_name`, `tpl.surge.doh`, `tpl.clash.doh`. Default mode is advanced (`advanced: "2"`).
+Returns a plain object merged into `data()` via spread. Form defaults come from `createSubscriptionForm()` in `useSubscription.js`. Default mode is advanced (`advanced: '2'`). `form.udp` is `null` when unspecified, or `true`/`false` when explicitly set.
 
 ### `src/composables/useSubscription.js`
-`makeUrl(form, advanced, processedSubUrl, currentBackend, customParams, needUdp)` — returns empty string on validation failure, otherwise builds full query string. Advanced mode adds remote config, include/exclude, filename, UDP, template, and custom params.
+`useSubscription(defaultBackend)` returns `makeUrl(form, advanced, customParams)` and synchronous `parseUrl(url)`. Generation owns backend selection and source normalization; invalid required fields produce an empty string. Parsing returns `{ success: true, form, customParams }` or `{ success: false, message }` without mutating existing state. Apply the returned form only on success. Missing Boolean options retain the existing import behavior (`false`); explicit UDP false differs from absence.
 
-### `src/composables/useUrlParser.js`
-`analyzeUrl(url)` — if URL contains `"target"`, returns as-is; otherwise fetches and returns `response.url` (short-link expansion, requires CORS on short-link service).  
-`parseUrl(url, form, customParams, onSuccess, onError)` — parses all query params back into form fields; unknown params become `customParams` entries.
+### `src/composables/useGeneratedLinks.js`
+Store `useGeneratedLinks()` in `data()` and invoke its methods through that reactive object. `setLongUrl(url)` invalidates the old short link and pending results. `shorten(generateShortUrl)` ignores obsolete results and errors. `importUrl` selects the matching short link or the current long link.
 
 ### `src/services/`
-All service classes are static methods. They take `$axios` as first argument (injected via plugin). Silent failures are acceptable for `getBackendVersion`. Upload response shape: `{ code: 0, data: { url }, msg }`. Short URL response shape: `{ Code: 1, ShortUrl, Message }`.
+Classes expose static methods. Axios operations take `$axios` first. `ShortUrlService.resolveUrl(input, fetchUrl = fetch)` owns redirect expansion; `target` query parameters identify direct conversion links. Upload response shape: `{ code: 0, data: { url }, msg }`; `uploadConfig($axios, content, copyText)` returns `{ url, copied }` and preserves the URL if copying fails. Short URL response shape: `{ Code: 1, ShortUrl, Message }`. See [Error handling](#error-handling) for notification ownership. Silent failures remain acceptable for `getBackendVersion`.
 
 ### `src/utils/storage.js`
 TTL stored inside the JSON value as `{ setTime, ttl, expire, value }`. `expire` checked on every read; expired entries are removed automatically. TTL value comes from `VITE_CACHE_TTL` env var.
@@ -91,7 +91,7 @@ TTL stored inside the JSON value as `{ setTime, ttl, expire, value }`. `expire` 
 
 - Indentation: 2 spaces
 - Quotes: single quotes preferred
-- Semicolons: none (`semi: 0`)
+- Semicolons: none. ESLint’s `semi: 0` disables enforcement, so review new code for this convention
 - Vue component names: single-word allowed (`vue/multi-word-component-names: off`)
 - `no-console` / `no-debugger`: error in production, off in dev
 - ESLint extends: `plugin:vue/vue3-essential`, `eslint:recommended`
@@ -109,7 +109,7 @@ TTL stored inside the JSON value as `{ setTime, ttl, expire, value }`. `expire` 
 - Options API everywhere; do not introduce Composition API or `<script setup>`
 - Component structure: `<template>`, `<script>`, `<style>`
 - Reactive state in `data()`; derived state in `computed`
-- Composables spread via `...useSubscription()` / `...useUrlParser()` in `methods`
+- Spread `...useSubscription(CONSTANTS.DEFAULT_BACKEND)` in `methods`; store generated-link state in `data()`
 - `useSubscriptionForm()` spread via `...subscriptionForm` in `data()`
 - Globals registered on `app.config.globalProperties` (`$axios`, `$getOS`, `$message`, `$notify`)
 - Named slots only (`<template #header>`); `slot="x"` and `$listeners` do not exist in Vue 3
@@ -128,7 +128,7 @@ TTL stored inside the JSON value as `{ setTime, ttl, expire, value }`. `expire` 
 - Do not commit `.env.local`, `.env.*.local`
 - Constants centralised in `src/config/constants.js` — do not scatter `import.meta.env` calls
 
-## Validation
+## Input validation
 
 - Use `src/utils/validators.js` for user-facing checks
 - `validateSubUrl` returns `{ valid, message }`; `validateForm` returns boolean
@@ -136,7 +136,8 @@ TTL stored inside the JSON value as `{ setTime, ttl, expire, value }`. `expire` 
 
 ## Error Handling
 
-- UI errors via `this.$message.*` or `this.$notify`
+- Views display notifications through `this.$message.*` or `this.$notify`; other modules may return error messages or throw descriptive errors for operational failures
+- Preserve the original `cause` when wrapping an operational error
 - Silent failures acceptable only when UX demands it (e.g., backend version fetch)
 - Use `formatErrorMessage` from `src/utils/formatters.js` for consistent error strings
 
@@ -180,14 +181,14 @@ export class BackendService {
 }
 
 // Composable (Options API style)
-export function useSubscription() {
-  return { makeUrl, buildBaseUrl, buildAdvancedParams }
+export function useSubscription(defaultBackend) {
+  // Generation and parsing share private parameter rules.
+  return { makeUrl, parseUrl }
 }
 
 // Spread composable into methods
 methods: {
-  ...useSubscription(),
-  ...useUrlParser()
+  ...useSubscription(CONSTANTS.DEFAULT_BACKEND)
 }
 
 // Spread form state into data()
@@ -196,8 +197,12 @@ data() {
 }
 ```
 
-## Suggested Manual Checks
+## Verification
 
+For import, generation, or upload compatibility reviews, read [Subscription workflow behavior changes](docs/changes/2026-09-06-subscription-workflows.md).
+
+- `node --test tests/subscription-workflows.test.mjs`
+- Single case: `node --test --test-name-pattern="invalid import leaves" tests/subscription-workflows.test.mjs`
 - `yarn lint`
 - `yarn build`
 - Run `yarn dev` and smoke the main screen
@@ -207,4 +212,4 @@ data() {
 - Follow existing patterns; minimise scope
 - No large refactors unless explicitly requested
 - Do not introduce TypeScript or new tooling without approval
-- No test runner configured; if added, document the single-test command here
+- Keep regression tests at module interfaces and page workflows; use controlled network and clipboard adapters

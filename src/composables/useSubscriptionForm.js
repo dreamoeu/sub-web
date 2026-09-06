@@ -1,56 +1,13 @@
-import { setLocalStorageItem } from '@/utils/storage';
+import { setLocalStorageItem } from '@/utils/storage'
+import { createSubscriptionForm } from '@/composables/useSubscription'
 
-/**
- * 订阅表单状态管理 - 为Vue 2 Options API设计
- */
+/** 返回供 Options API data() 使用的订阅表单状态。 */
 export function useSubscriptionForm() {
-  // 返回响应式数据和方法的集合
   return {
-    // 表单数据
-    form: {
-      sourceSubUrl: "",
-      clientType: "",
-      customBackend: "",
-      remoteConfig: "",
-      excludeRemarks: "",
-      includeRemarks: "",
-      filename: "",
-      emoji: true,
-      nodeList: false,
-      extraset: false,
-      sort: false,
-      udp: false,
-      tfo: false,
-      scv: true,
-      fdn: false,
-      expand: true,
-      appendType: false,
-      insert: false, // 是否插入默认订阅的节点，对应配置项 insert_url
-      new_name: true, // 是否使用 Clash 新字段
-
-      // tpl 定制功能
-      tpl: {
-        surge: {
-          doh: false // dns 查询是否使用 DoH
-        },
-        clash: {
-          doh: false
-        }
-      }
-    },
-
-    // 自定义参数
+    form: createSubscriptionForm(),
     customParams: [],
-
-    // 高级模式
-    advanced: "2",
-
-    // 是否需要UDP
-    needUdp: false,
-
-    // 生成的订阅链接
-    customSubUrl: ""
-  };
+    advanced: '2'
+  }
 }
 
 /**
